@@ -1,0 +1,285 @@
+
+!wget https://raw.githubusercontent.com/mrdbourke/tensorflow-deep-learning/refs/heads/main/extras/helper_functions.py
+from helper_functions import *
+import tensorflow as tf
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import tensorflow_datasets as tfds#used to get tf datasets
+
+!wget https://storage.googleapis.com/ztm_tf_course/nlp_getting_started.zip
+unzip_data("nlp_getting_started.zip")
+
+traindf=pd.read_csv("train.csv")
+testdf=pd.read_csv("test.csv")
+traindf.head()
+
+traindfshuffle = traindf.sample(frac=1,random_state=42)
+traindfshuffle.head()
+
+#visualize some data
+import random 
+randidx = random.randint(0,len(traindfshuffle)-5)
+for row in traindfshuffle[["text","target"]][randidx:randidx+5].itertuples():
+    _,text,target=row
+    print(text)
+    print(target)
+#0 to len-5 
+#randidx to randidx +5 is for 5 images 
+#itertuples is for string to tuples   
+
+from sklearn.model_selection import train_test_split
+trainsentences,valsentences,trainlabels,vallabels train_test_split(traindfshuffle["text"].to_numpy(),
+                                                                     traindfshuffle["target"].to_numpy(),
+                                                                     test_size=0.1,
+                                                                     random_state=42)
+len(trainsentences),len(valsentences),len(trainlabels),len(vallabels)
+
+*test to numbers
+tokenization:- Think of tokenization like splitting a sentence into words or meaningful parts.
+embedding:-Computers don’t understand text; they understand numbers. Embeddings convert words into numerical form so they can be used in machine learning.
+
+
+#converting text to numbers 
+
+from tensorflow.keras.layers import TextVectorization
+textvectorizer = TextVectorization(
+    max_tokens=None,  # Set a vocab size limit
+    standardize="lower",  # Converts text to lowercase
+    split="whitespace",  # Splitting on spaces
+    ngrams=None,  # No n-grams, just single tokens
+    output_mode="int",  # Convert words to integers
+)
+
+# find avg tweet length 
+round(sum([len(i.split()) for i in trainsentences])/len(trainsentences))
+
+
+#setup text vectorization vectors 
+max_vocab_length=10000 # max no.of words to have in vocab
+max_length=15 # on an avg how many word in a tweet 
+textvectorizer = TextVectorization(max_tokens=max_vocab_length,
+                                   standardize="lower",
+                                   split="whitespace", 
+                                   ngrams=None,  # No n-grams, just single tokens
+                                   output_mode="int",)
+
+#fit traing sentences to vectorizer
+textvectorizer.adapt(trainsentences)
+
+#create a sample text and tokenize it 
+sample="there is flood in my city"
+textvectorizer([sample])
+
+# get the most and least commom words in vocab 
+wordsinvocab = textvectorizer.get_vocabulary()
+top5 = wordsinvocab[:5]
+bottom5 = wordsinvocab[-5:]
+print(f"Number of words in vocab: {len(wordsinvocab)}")
+print(f"Top 5 most common words: {top5}")
+print(f"Bottom 5 least common words: {bottom5}")
+
+# creating embedding layer
+
+embedding = tf.keras.layers.Embedding(input_dim=max_vocab_length,#size of vocab 
+                                      output_dim=128, #size of output layer 
+                                      embeddings_initializer="uniform",
+                                      input_length=max_length,# length of sequence 
+                                      )
+Embedding
+
+# get a random sentence 
+randsentence = random.choice(trainsentences)
+print(f"orginal text:{randsentence}")
+print(f"vectorized text:{textvectorizer([randsentence])}")
+#embedding a sentence 
+sampleembedd = embedding(textvectorizer([randsentence]))
+sampleembedd  
+
+now we can convert text into num , lets start modelling
+model0 : naive bayes - basemodel
+model1 : feed forward nn (dense model)
+model2 : LSTM model rnn
+model3 : GRU model rnn
+model4 : biderection LSTM
+model5 : 1D cnn
+model6 : feature extractor
+model7 : model6 with 10% data
+
+
+# model 0 
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.pipeline import Pipeline
+ model0 = Pipeline([
+     ("tfidf",TfidfVectorizer()),
+     ("clf",MultinomialNB())
+     
+ ])
+
+#creating an evaluation function
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+def calculate_results(y_true,y_pred):
+    model_accuracy=accuracy_score(y_true,y_pred)*100
+    model_precision,model_recall,model_f1,_=precision_recall_fscore_support(
+        y_true,y_pred,average="weighted")
+    model_result = {"accuracy":model_accuracy,
+                    "precision":model_precision,
+                    "recall":model_recall,
+                    "f1":model_f1}
+    return model_result
+
+baselineresult = calculate_results(y_true=vallabels,y_pred=baselinepreds)
+baselineresult
+
+
+#model1 dense model 
+
+save_dir="model_logs"
+#with functional api 
+from tensorflow.keras import layers
+inputs = layers.Input(shape=(1,),dtype=tf.string)
+x = textvectorizer(inputs)
+x = embedding(x)
+x = layers.GlobalAveragePooling1D()(x)
+x = layers.Dense(128,activation="relu")(x)
+x = layers.Dense(64,activation="relu")(x)
+output = layers.Dense(1,activation="sigmoid")(x)
+model1 = tf.keras.Model(inputs=inputs,outputs=output,name="model_1_dense")
+#w/o the pooling layer it takes each token and predicts on it 
+#but with pooling layer model takes the whole sentence as one 
+import numpy as np
+trainlabels = np.array(trainlabels).reshape(-1, 1)
+vallabels = np.array(vallabels).reshape(-1, 1)
+from helper_functions import create_tensorboard_callback
+model1.compile(loss="binary_crossentropy",
+               optimizer=tf.keras.optimizers.Adam(),
+               metrics=["accuracy"])
+model1hist = model1.fit(x=trainsentences,
+                        y=trainlabels,
+                        epochs=5,
+                        validation_data=(valsentences,vallabels),
+                        callbacks=[create_tensorboard_callback(dir_name=save_dir,
+                                                               experiment_name="model_1_dense")])
+
+
+watching our embeddings on Embedding Projector
+
+
+#Model2 - LSTM model
+
+#create an LSTM model 
+#input->vectorize->embedding->layers(rnn)->output
+from tensorflow.keras import layers
+inputs = layers.Input(shape=(1,),dtype=tf.string)
+x = textvectorizer(inputs)
+x = embedding(x)
+#print(x)
+x = layers.LSTM(64,return_sequences=True)(x) # use return_sequences = T
+#print(x)                            -when u want to multiple lstm stack layers 
+x = layers.LSTM(64)(x)
+#print(x)
+x = layers.Dense(64,activation="relu")(x)
+#print(x)
+output = layers.Dense(1,activation="sigmoid")(x)
+model2 = tf.keras.Model(inputs=inputs,outputs=output,name="model_2_LSTM")
+model2.compile(loss="binary_crossentropy",
+               optimizer=tf.keras.optimizers.Adam(),
+               metrics=["accuracy"])
+model2hist = model2.fit(trainsentences,
+                        trainlabels,
+                        epochs=5,
+                        validation_data=(valsentences,vallabels),
+                        callbacks=[create_tensorboard_callback(dir_name=save_dir,
+                                                               experiment_name="model_1_dense")])
+
+model2predprobs = model2.predict(valsentences)
+model2preds = tf.squeeze(tf.round(model2predprobs))
+model2result = calculate_results(y_true=vallabels,y_pred=model2preds)
+model2result
+
+#Model 3 GRU model 
+
+#GRU layer 
+from tensorflow.keras import layers
+input = layers.Input(shape=(1,),dtype=tf.string)
+x=textvectorizer(input)
+x=embedding(x)
+#print(x)
+x=layers.GRU(64,return_sequences=True)(x)
+#print(x)
+x=layers.GRU(64)(x)
+#print(x)
+x=layers.Dense(64,activation="relu")(x)
+#print(x)
+output=layers.Dense(1,activation="sigmoid")(x)
+model3=tf.keras.Model(inputs=input,outputs=output,name="model_3_GRU")
+model3.compile(loss="binary_crossentropy",
+               optimizer=tf.keras.optimizers.Adam(),
+               metrics=["accuracy"])
+model3hist = model3.fit(trainsentences,
+                        trainlabels,
+                        epochs=5,
+                        validation_data=(valsentences,vallabels),
+                        callbacks=[create_tensorboard_callback(dir_name=save_dir,
+                                                               experiment_name="model_3_GRU")])
+
+model3predprobs = model3.predict(valsentences)
+model3preds = tf.squeeze(tf.round(model3predprobs))
+model3result = calculate_results(y_true=vallabels,y_pred=model3preds)
+model3result
+
+Model4 - Bidirectional LSTM model
+
+#BI directional model 
+from tensorflow.keras import layers
+input = layers.Input(shape=(1,),dtype=tf.string)
+x = textvectorizer(input)
+x = embedding(x)
+x = layers.Bidirectional(layers.LSTM(64,return_sequences=True))(x)
+x = layers.Bidirectional(layers.LSTM(64,return_sequences=True))(x)
+x = layers.Bidirectional(layers.LSTM(64))(x)
+x = layers.Dense(64,activation="relu")(x)
+output = layers.Dense(1,activation="sigmoid")(x)
+model4 = tf.keras.Model(inputs=input,outputs=output,name="model_4_bidirectional")
+model4.compile(loss="binary_crossentropy",
+               optimizer=tf.keras.optimizers.Adam(),
+               metrics=["accuracy"])
+model4hist = model4.fit(trainsentences,
+                        trainlabels,
+                        epochs=5,
+                        validation_data=(valsentences,vallabels),
+                        callbacks=[create_tensorboard_callback(dir_name=save_dir,
+                                                               experiment_name="model_3_GRU")])
+
+
+model4predprobs = model4.predict(valsentences)
+model4preds = tf.squeeze(tf.round(model4predprobs))
+model4result = calculate_results(y_true=vallabels,y_pred=model4preds)
+Model4result
+
+Model5 - CONV1D
+
+#Conv 1D layer
+input = layers.Input(shape=(1,),dtype=tf.string)
+x = textvectorizer(input)
+x = embedding(x)
+x = layers.Conv1D(filters=64,kernel_size=5,activation="relu")(x)
+x = layers.GlobalMaxPool1D()(x)
+x = layers.Dense(64,activation="relu")(x)
+output = layers.Dense(1,activation="sigmoid")(x)
+model5 = tf.keras.Model(inputs=input,outputs=output,name="model_5_Conv1D")
+model5.compile(loss="binary_crossentropy",
+               optimizer=tf.keras.optimizers.Adam(),
+               metrics=["accuracy"])
+model5hist = model5.fit(trainsentences,
+                        trainlabels,
+                        epochs=5,
+                        validation_data=(valsentences,vallabels),
+                        callbacks=[create_tensorboard_callback(dir_name=save_dir,
+                                                               experiment_name="model_5_conv1d")])
+
+model5predprobs = model5.predict(valsentences)
+model5preds = tf.squeeze(tf.round(model5predprobs))
+model5result = calculate_results(y_true=vallabels,y_pred=model5preds)
+model5result
