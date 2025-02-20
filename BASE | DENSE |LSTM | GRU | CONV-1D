@@ -283,3 +283,39 @@ model5predprobs = model5.predict(valsentences)
 model5preds = tf.squeeze(tf.round(model5predprobs))
 model5result = calculate_results(y_true=vallabels,y_pred=model5preds)
 model5result
+
+#visuals
+
+import tensorflow_hub as hub
+embed = hub.load("https://tfhub.dev/google/universal-sentence-encoder/4")
+embed_samples = embed(trainsentences[:5])
+embed_samples
+
+embed_samples[0].shape
+
+encoderlayer = hub.KerasLayer("https://tfhub.dev/google/universal-sentence-encoder/4",
+                               input_shape=[],
+                               dtype=tf.string,
+                               trainable=False,
+                               name="universalencoder")
+
+all_model_results = pd.DataFrame({"baseline": baselineresult,
+                    "model_1": model1result,
+                    "model_2": model2result,
+                    "model_3": model3result,
+                    "model_4": model4result,
+                    "model_5": model5result,})
+all_model_results.transpose()
+
+#sort the f1 values only
+all_model_results.sort_values("f1",ascending=False)["f1"].plot(kind="bar",figsize=(10,7))
+
+
+
+#tensorboard log of all models 
+#upload tensorboard dev recs
+!tensorboard dev upload --logdir ./model_logs/ \
+  --name "NLP modelling experiments" \
+  --description "Different modelling experiments and result comparison" \
+  --one_shot
+
